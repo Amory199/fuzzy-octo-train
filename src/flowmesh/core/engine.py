@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
@@ -35,8 +36,27 @@ from flowmesh.patterns.retry import RetryPolicy, retry_with_backoff
 
 if TYPE_CHECKING:
     from flowmesh.core.checkpoint import CheckpointStore
+    from flowmesh.core.hooks import TaskHook
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True)
+class ExecutionPlan:
+    """Result of a dry-run — shows *how* a workflow would execute.
+
+    Attributes:
+        phases: Ordered list of parallelism groups.  Each group is a
+            list of task names that would run concurrently.
+        total_tasks: Total number of tasks in the workflow.
+        critical_path: Longest dependency chain (list of task names).
+        critical_path_length: Number of tasks on the critical path.
+    """
+
+    phases: list[list[str]] = field(default_factory=list)
+    total_tasks: int = 0
+    critical_path: list[str] = field(default_factory=list)
+    critical_path_length: int = 0
 
 
 class ExecutionEngine:
@@ -61,16 +81,71 @@ class ExecutionEngine:
         circuit_breaker: CircuitBreaker | None = None,
         default_retry: RetryPolicy | None = None,
         checkpoint_store: CheckpointStore | None = None,
+        hooks: list[TaskHook] | None = None,
     ) -> None:
         self._event_bus = event_bus or EventBus()
         self._scheduler = Scheduler(scheduler_config)
         self._circuit_breaker = circuit_breaker
         self._default_retry = default_retry or RetryPolicy(max_retries=0)
         self._checkpoint_store = checkpoint_store
+        self._hooks: list[TaskHook] = hooks or []
 
     @property
     def event_bus(self) -> EventBus:
         return self._event_bus
+
+    def dry_run(self, workflow: Workflow) -> ExecutionPlan:
+        """Simulate execution without running any tasks.
+
+        Validates the DAG, computes parallelism phases (groups of tasks
+        that would execute concurrently), and identifies the critical
+        path — the longest dependency chain that determines the minimum
+        possible wall-clock time.
+
+        This is a **synchronous** method because no I/O is performed.
+        """
+        dag = workflow.build_dag()
+        task_map: dict[str, Task] = {t.name: t for t in workflow.tasks}
+
+        # --- Build phases (BFS layer by layer) ---
+        phases: list[list[str]] = []
+        completed: set[str] = set()
+
+        while len(completed) < len(task_map):
+            ready = dag.get_ready_nodes(completed)
+            layer = [n for n in ready if n not in completed]
+            if not layer:
+                break  # no progress — shouldn't happen after DAG validation
+            # Sort by priority within the phase (descending)
+            layer.sort(key=lambda n: task_map[n].priority, reverse=True)
+            phases.append(layer)
+            completed.update(layer)
+
+        # --- Compute critical path (longest path in DAG) ---
+        topo = dag.topological_sort()
+        # dist[node] = (length, predecessor) of longest path ending at node
+        dist: dict[str, tuple[int, str | None]] = {n: (1, None) for n in topo}
+        for node in topo:
+            for neighbour in dag._adjacency.get(node, set()):
+                new_len = dist[node][0] + 1
+                if new_len > dist[neighbour][0]:
+                    dist[neighbour] = (new_len, node)
+
+        # Find the endpoint of the longest path
+        end_node = max(topo, key=lambda n: dist[n][0])
+        critical_path: list[str] = []
+        cur: str | None = end_node
+        while cur is not None:
+            critical_path.append(cur)
+            cur = dist[cur][1]
+        critical_path.reverse()
+
+        return ExecutionPlan(
+            phases=phases,
+            total_tasks=len(task_map),
+            critical_path=critical_path,
+            critical_path_length=len(critical_path),
+        )
 
     async def execute(self, workflow: Workflow) -> dict[str, TaskResult]:
         """Execute *workflow* and return a mapping of task name → result."""
@@ -247,6 +322,10 @@ class ExecutionEngine:
             )
         )
 
+        # --- Before-task hooks ---
+        for hook in self._hooks:
+            await hook.before_task(task, workflow)
+
         retries = task.retry_count or self._default_retry.max_retries
         policy = RetryPolicy(max_retries=retries)
 
@@ -295,6 +374,10 @@ class ExecutionEngine:
                     {"workflow_id": workflow.id, "task_name": task.name, "error": str(exc)},
                 )
             )
+
+        # --- After-task hooks ---
+        for hook in self._hooks:
+            await hook.after_task(task, result, workflow)
 
     async def _invoke(self, task: Task, policy: RetryPolicy, results: dict[str, TaskResult]) -> Any:
         """Call the task function, honouring circuit-breaker, retry, and data-flow logic."""

@@ -63,7 +63,11 @@ class Scheduler:
         self._running.discard(task_name)
 
     def get_ready_tasks(self, dag: DAG, tasks: dict[str, Task]) -> list[Task]:
-        """Return tasks whose dependencies are satisfied and that are not yet scheduled."""
+        """Return tasks whose dependencies are satisfied and that are not yet scheduled.
+
+        Tasks are returned in descending priority order so the engine
+        dispatches higher-priority work first.
+        """
         # Both completed and skipped tasks satisfy downstream dependencies
         done = self._completed | self._skipped
         ready_names = dag.get_ready_nodes(done)
@@ -74,6 +78,8 @@ class Scheduler:
             task = tasks.get(name)
             if task and task.status == TaskStatus.PENDING:
                 result.append(task)
+        # Higher priority first
+        result.sort(key=lambda t: t.priority, reverse=True)
         return result
 
     @property

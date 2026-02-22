@@ -74,6 +74,10 @@ class Task:
     **Conditional execution**: Supply a :attr:`condition` callable that
     receives a dict of ``{task_name: TaskResult}`` for all completed
     upstream tasks.  If it returns ``False`` the task is skipped.
+
+    **Priority**: Set :attr:`priority` to an integer (default ``0``).
+    When multiple tasks are ready simultaneously the scheduler runs
+    higher-priority tasks first.
     """
 
     name: str
@@ -81,6 +85,7 @@ class Task:
     depends_on: list[str] = field(default_factory=list)
     timeout_seconds: float = 300.0
     retry_count: int = 0
+    priority: int = 0
     metadata: dict[str, Any] = field(default_factory=dict)
     id: str = field(default_factory=lambda: uuid.uuid4().hex[:12])
     status: TaskStatus = TaskStatus.PENDING
