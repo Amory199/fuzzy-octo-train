@@ -260,7 +260,7 @@ When multiple tasks are ready, higher-priority tasks run first:
 
 ```python
 workflow = Workflow(
-    name="Prioritised Pipeline",
+    name="Prioritized Pipeline",
     tasks=[
         Task(name="critical", func=important_job, priority=10),
         Task(name="normal",   func=routine_job,   priority=0),

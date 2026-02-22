@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import pytest
+
 from flowmesh.core.engine import ExecutionEngine
 from flowmesh.core.models import Task, Workflow
 
@@ -129,8 +131,6 @@ class TestDryRun:
 
         async def noop() -> None:
             pass
-
-        import pytest
 
         wf = Workflow(name="frozen", tasks=[Task(name="a", func=noop)])
         plan = ExecutionEngine().dry_run(wf)
