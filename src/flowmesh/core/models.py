@@ -65,6 +65,19 @@ class Task:
 
     Each task wraps an async callable and may declare dependencies on
     other tasks via :attr:`depends_on`.
+
+    **Data flow**: Set :attr:`input_map` to a dict mapping function
+    keyword-argument names to upstream task names.  The engine will
+    inject the corresponding upstream outputs at call time, turning
+    the DAG into a data pipeline.
+
+    **Conditional execution**: Supply a :attr:`condition` callable that
+    receives a dict of ``{task_name: TaskResult}`` for all completed
+    upstream tasks.  If it returns ``False`` the task is skipped.
+
+    **Priority**: Set :attr:`priority` to an integer (default ``0``).
+    When multiple tasks are ready simultaneously the scheduler runs
+    higher-priority tasks first.
     """
 
     name: str
@@ -72,10 +85,13 @@ class Task:
     depends_on: list[str] = field(default_factory=list)
     timeout_seconds: float = 300.0
     retry_count: int = 0
+    priority: int = 0
     metadata: dict[str, Any] = field(default_factory=dict)
     id: str = field(default_factory=lambda: uuid.uuid4().hex[:12])
     status: TaskStatus = TaskStatus.PENDING
     result: TaskResult | None = None
+    input_map: dict[str, str] = field(default_factory=dict)
+    condition: Callable[[dict[str, TaskResult]], bool] | None = None
 
     def __hash__(self) -> int:
         return hash(self.id)
@@ -138,9 +154,7 @@ class DAG:
         for node_id in self._adjacency:
             if node_id in completed:
                 continue
-            deps = {
-                src for src, targets in self._adjacency.items() if node_id in targets
-            }
+            deps = {src for src, targets in self._adjacency.items() if node_id in targets}
             if deps <= completed:
                 ready.append(node_id)
         return ready
@@ -173,9 +187,7 @@ class Workflow:
             dag.add_node(task.name)
             for dep in task.depends_on:
                 if dep not in task_names:
-                    raise ValueError(
-                        f"Task '{task.name}' depends on unknown task '{dep}'"
-                    )
+                    raise ValueError(f"Task '{task.name}' depends on unknown task '{dep}'")
                 dag.add_edge(dep, task.name)
         # Validate — will raise CycleDetectedError if invalid
         dag.topological_sort()

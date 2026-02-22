@@ -29,6 +29,7 @@ class EventType(Enum):
     TASK_COMPLETED = "task.completed"
     TASK_FAILED = "task.failed"
     TASK_RETRYING = "task.retrying"
+    TASK_SKIPPED = "task.skipped"
 
 
 @dataclass(frozen=True)
@@ -70,9 +71,7 @@ class EventBus:
         if not handlers:
             return
 
-        results = await asyncio.gather(
-            *(h(event) for h in handlers), return_exceptions=True
-        )
+        results = await asyncio.gather(*(h(event) for h in handlers), return_exceptions=True)
         for idx, result in enumerate(results):
             if isinstance(result, BaseException):
                 logger.error(

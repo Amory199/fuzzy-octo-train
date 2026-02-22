@@ -37,12 +37,14 @@ class Scheduler:
         self._completed: set[str] = set()
         self._failed: set[str] = set()
         self._running: set[str] = set()
+        self._skipped: set[str] = set()
 
     def reset(self) -> None:
         """Clear internal bookkeeping for a fresh run."""
         self._completed.clear()
         self._failed.clear()
         self._running.clear()
+        self._skipped.clear()
 
     def mark_completed(self, task_name: str) -> None:
         self._completed.add(task_name)
@@ -55,9 +57,20 @@ class Scheduler:
     def mark_running(self, task_name: str) -> None:
         self._running.add(task_name)
 
+    def mark_skipped(self, task_name: str) -> None:
+        """Mark a task as skipped (condition was false)."""
+        self._skipped.add(task_name)
+        self._running.discard(task_name)
+
     def get_ready_tasks(self, dag: DAG, tasks: dict[str, Task]) -> list[Task]:
-        """Return tasks whose dependencies are satisfied and that are not yet scheduled."""
-        ready_names = dag.get_ready_nodes(self._completed)
+        """Return tasks whose dependencies are satisfied and that are not yet scheduled.
+
+        Tasks are returned in descending priority order so the engine
+        dispatches higher-priority work first.
+        """
+        # Both completed and skipped tasks satisfy downstream dependencies
+        done = self._completed | self._skipped
+        ready_names = dag.get_ready_nodes(done)
         result: list[Task] = []
         for name in ready_names:
             if name in self._running or name in self._failed:
@@ -65,6 +78,8 @@ class Scheduler:
             task = tasks.get(name)
             if task and task.status == TaskStatus.PENDING:
                 result.append(task)
+        # Higher priority first
+        result.sort(key=lambda t: t.priority, reverse=True)
         return result
 
     @property
