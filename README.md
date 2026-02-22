@@ -22,6 +22,9 @@ FlowMesh is a **production-grade workflow engine** built from the ground up in P
 |---|---|
 | **DAG-based scheduling** | Topological sort (Kahn's algorithm) ensures tasks run in valid dependency order |
 | **Async execution engine** | `asyncio`-native with configurable concurrency via semaphore |
+| **Task data flow** | Upstream task outputs automatically injected as kwargs to downstream tasks via `input_map` |
+| **Conditional execution** | Tasks can declare conditions to dynamically skip based on upstream results |
+| **Checkpointing & resume** | Persist state after each task; resume failed workflows without re-running completed steps |
 | **Circuit Breaker** | Three-state fault isolation (Closed → Open → Half-Open) prevents cascading failures |
 | **Retry with backoff** | Exponential backoff with jitter for transient failure recovery |
 | **Token-bucket rate limiter** | Protects downstream services from burst traffic |
@@ -160,6 +163,76 @@ retry = RetryPolicy(max_retries=3, base_delay_seconds=0.1, jitter=True)
 engine = ExecutionEngine(circuit_breaker=cb, default_retry=retry)
 ```
 
+### Data Flow Between Tasks
+
+Use `input_map` to pipe upstream outputs into downstream task arguments.
+The DAG becomes a true **data pipeline** — not just dependency ordering.
+
+```python
+async def extract():
+    return {"users": ["alice", "bob"], "count": 2}
+
+async def transform(*, data):
+    return [u.upper() for u in data["users"]]
+
+async def load(*, records):
+    return f"Loaded {len(records)} records"
+
+workflow = Workflow(
+    name="ETL with Data Flow",
+    tasks=[
+        Task(name="extract", func=extract),
+        Task(name="transform", func=transform, depends_on=["extract"],
+             input_map={"data": "extract"}),
+        Task(name="load", func=load, depends_on=["transform"],
+             input_map={"records": "transform"}),
+    ],
+)
+```
+
+### Conditional Execution
+
+Skip expensive tasks dynamically based on upstream results:
+
+```python
+async def validate(*, data):
+    return {"valid": len(data["users"]) > 0, "data": data}
+
+async def expensive_enrichment(*, validated):
+    # Only runs if validation passed
+    return {"enriched": True}
+
+workflow = Workflow(
+    name="Conditional Pipeline",
+    tasks=[
+        Task(name="extract", func=extract),
+        Task(name="validate", func=validate, depends_on=["extract"],
+             input_map={"data": "extract"}),
+        Task(name="enrich", func=expensive_enrichment, depends_on=["validate"],
+             input_map={"validated": "validate"},
+             condition=lambda upstream: upstream["validate"].output["valid"]),
+    ],
+)
+```
+
+### Checkpointing & Resume
+
+Resume failed workflows without re-running completed steps — saves
+massive compute cost on long pipelines:
+
+```python
+from flowmesh.core.checkpoint import InMemoryCheckpointStore
+
+cp_store = InMemoryCheckpointStore()
+engine = ExecutionEngine(checkpoint_store=cp_store)
+
+# First run — if step 8 of 10 fails, steps 1-7 are checkpointed
+results = engine.execute(workflow)
+
+# Fix the issue, then resume from where it left off
+results = engine.resume(workflow)
+```
+
 ### Subscribe to Events
 
 ```python
@@ -204,6 +277,9 @@ curl http://localhost:8000/health
 | Pattern | Location | Purpose |
 |---|---|---|
 | **DAG + Topological Sort** | `core/models.py` | Dependency resolution via Kahn's algorithm |
+| **Data Flow Graph** | `core/engine.py` + `Task.input_map` | Upstream outputs auto-injected into downstream tasks |
+| **Conditional Execution** | `core/engine.py` + `Task.condition` | Dynamic task skipping based on upstream results |
+| **Checkpointing & Resume** | `core/checkpoint.py` | Persist completed tasks; resume failed workflows |
 | **Circuit Breaker** | `patterns/circuit_breaker.py` | Fault isolation with three-state machine |
 | **Retry with Exponential Backoff** | `patterns/retry.py` | Transient failure recovery |
 | **Token Bucket Rate Limiter** | `patterns/rate_limiter.py` | Throughput protection |
@@ -246,9 +322,10 @@ mypy src/flowmesh/
 ├── src/flowmesh/
 │   ├── core/
 │   │   ├── models.py        # Task, Workflow, DAG (Kahn's toposort)
-│   │   ├── engine.py        # Async execution engine
+│   │   ├── engine.py        # Async execution engine (data flow, conditions, checkpoint)
 │   │   ├── scheduler.py     # Concurrency-controlled scheduler
-│   │   └── events.py        # Pub/sub event bus
+│   │   ├── events.py        # Pub/sub event bus
+│   │   └── checkpoint.py    # Checkpoint store for resumable workflows
 │   ├── patterns/
 │   │   ├── circuit_breaker.py
 │   │   ├── retry.py
@@ -261,7 +338,7 @@ mypy src/flowmesh/
 │       ├── base.py           # Abstract store (hexagonal port)
 │       └── memory.py         # In-memory adapter
 ├── tests/
-│   ├── unit/                 # 38 unit tests
+│   ├── unit/                 # 54 unit tests
 │   └── integration/          # 7 API integration tests
 ├── examples/
 │   ├── basic_workflow.py
