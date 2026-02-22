@@ -25,6 +25,9 @@ FlowMesh is a **production-grade workflow engine** built from the ground up in P
 | **Task data flow** | Upstream task outputs automatically injected as kwargs to downstream tasks via `input_map` |
 | **Conditional execution** | Tasks can declare conditions to dynamically skip based on upstream results |
 | **Checkpointing & resume** | Persist state after each task; resume failed workflows without re-running completed steps |
+| **Execution hooks** | `before_task` / `after_task` middleware for logging, metrics, and validation without modifying tasks |
+| **Task priority** | Higher-priority tasks are dispatched first when multiple are ready simultaneously |
+| **Dry run / execution plan** | Simulate workflow execution: see parallelism phases, critical path, and task ordering without running anything |
 | **Circuit Breaker** | Three-state fault isolation (Closed → Open → Half-Open) prevents cascading failures |
 | **Retry with backoff** | Exponential backoff with jitter for transient failure recovery |
 | **Token-bucket rate limiter** | Protects downstream services from burst traffic |
@@ -233,6 +236,54 @@ results = engine.execute(workflow)
 results = engine.resume(workflow)
 ```
 
+### Execution Hooks (Middleware)
+
+Inject cross-cutting logic — logging, metrics, validation — without
+modifying your task functions:
+
+```python
+from flowmesh.core.hooks import TaskHook
+
+class MetricsHook(TaskHook):
+    async def before_task(self, task, workflow):
+        print(f"⏱ Starting {task.name}")
+
+    async def after_task(self, task, result, workflow):
+        print(f"✅ {task.name} → {result.status.value} ({result.duration_ms:.0f}ms)")
+
+engine = ExecutionEngine(hooks=[MetricsHook()])
+```
+
+### Task Priority
+
+When multiple tasks are ready, higher-priority tasks run first:
+
+```python
+workflow = Workflow(
+    name="Prioritised Pipeline",
+    tasks=[
+        Task(name="critical", func=important_job, priority=10),
+        Task(name="normal",   func=routine_job,   priority=0),
+        Task(name="low",      func=background_job, priority=-5),
+    ],
+)
+```
+
+### Dry Run / Execution Plan
+
+See exactly how a workflow *would* execute — parallelism phases,
+critical path, and task count — without running anything:
+
+```python
+engine = ExecutionEngine()
+plan = engine.dry_run(workflow)
+
+print(plan.phases)               # [['extract'], ['transform', 'enrich'], ['load']]
+print(plan.critical_path)        # ['extract', 'transform', 'load']
+print(plan.critical_path_length) # 3
+print(plan.total_tasks)          # 4
+```
+
 ### Subscribe to Events
 
 ```python
@@ -280,6 +331,9 @@ curl http://localhost:8000/health
 | **Data Flow Graph** | `core/engine.py` + `Task.input_map` | Upstream outputs auto-injected into downstream tasks |
 | **Conditional Execution** | `core/engine.py` + `Task.condition` | Dynamic task skipping based on upstream results |
 | **Checkpointing & Resume** | `core/checkpoint.py` | Persist completed tasks; resume failed workflows |
+| **Middleware / Hooks** | `core/hooks.py` | Before/after task callbacks for cross-cutting concerns |
+| **Priority Scheduling** | `core/scheduler.py` | Higher-priority tasks dispatched first |
+| **Dry Run / Plan** | `core/engine.py` `dry_run()` | Execution plan with phases and critical path |
 | **Circuit Breaker** | `patterns/circuit_breaker.py` | Fault isolation with three-state machine |
 | **Retry with Exponential Backoff** | `patterns/retry.py` | Transient failure recovery |
 | **Token Bucket Rate Limiter** | `patterns/rate_limiter.py` | Throughput protection |
@@ -322,9 +376,10 @@ mypy src/flowmesh/
 ├── src/flowmesh/
 │   ├── core/
 │   │   ├── models.py        # Task, Workflow, DAG (Kahn's toposort)
-│   │   ├── engine.py        # Async execution engine (data flow, conditions, checkpoint)
-│   │   ├── scheduler.py     # Concurrency-controlled scheduler
+│   │   ├── engine.py        # Async execution engine + dry-run planner
+│   │   ├── scheduler.py     # Priority-aware concurrency scheduler
 │   │   ├── events.py        # Pub/sub event bus
+│   │   ├── hooks.py         # Before/after task execution hooks
 │   │   └── checkpoint.py    # Checkpoint store for resumable workflows
 │   ├── patterns/
 │   │   ├── circuit_breaker.py
@@ -338,7 +393,7 @@ mypy src/flowmesh/
 │       ├── base.py           # Abstract store (hexagonal port)
 │       └── memory.py         # In-memory adapter
 ├── tests/
-│   ├── unit/                 # 54 unit tests
+│   ├── unit/                 # 69 unit tests
 │   └── integration/          # 7 API integration tests
 ├── examples/
 │   ├── basic_workflow.py
