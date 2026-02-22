@@ -106,7 +106,10 @@ class TestConditionalExecution:
         bus = EventBus()
 
         async def on_skip(event: object) -> None:
-            skipped_events.append(event.payload["task_name"])  # type: ignore[union-attr]
+            from flowmesh.core.events import Event
+
+            assert isinstance(event, Event)
+            skipped_events.append(event.payload["task_name"])
 
         bus.subscribe(EventType.TASK_SKIPPED, on_skip)
 

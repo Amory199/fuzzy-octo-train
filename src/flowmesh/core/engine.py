@@ -313,8 +313,6 @@ class ExecutionEngine:
                     return await self._circuit_breaker.call(task.func, **kwargs)
                 except CircuitOpenError:
                     raise
-            if kwargs:
-                return await asyncio.wait_for(task.func(**kwargs), timeout=task.timeout_seconds)
-            return await asyncio.wait_for(task.func(), timeout=task.timeout_seconds)
+            return await asyncio.wait_for(task.func(**kwargs), timeout=task.timeout_seconds)
 
         return await retry_with_backoff(_call, policy)
