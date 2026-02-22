@@ -64,7 +64,7 @@ class Task:
     """A unit of work inside a workflow.
 
     Each task wraps an async callable and may declare dependencies on
-    other tasks via :pyattr:`depends_on`.
+    other tasks via :attr:`depends_on`.
     """
 
     name: str

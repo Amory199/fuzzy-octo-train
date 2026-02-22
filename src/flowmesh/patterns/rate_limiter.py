@@ -22,7 +22,7 @@ class RateLimiterConfig:
 class RateLimiter:
     """Async-safe token-bucket rate limiter.
 
-    Tokens are added at a steady :pyattr:`refill_rate`.  Each call to
+    Tokens are added at a steady :attr:`refill_rate`.  Each call to
     :meth:`acquire` consumes one token, blocking if the bucket is empty.
     """
 
