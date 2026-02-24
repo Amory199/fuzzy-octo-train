@@ -6,6 +6,7 @@ import time
 from typing import TYPE_CHECKING
 
 from fastapi import APIRouter, HTTPException, status
+from starlette.websockets import WebSocket, WebSocketDisconnect
 
 from flowmesh import __version__
 from flowmesh.api.schemas import (
@@ -16,6 +17,7 @@ from flowmesh.api.schemas import (
     WorkflowDetailResponse,
     WorkflowResponse,
 )
+from flowmesh.api.websocket import ConnectionManager
 from flowmesh.core.models import WorkflowStatus
 
 if TYPE_CHECKING:
@@ -26,12 +28,18 @@ router = APIRouter()
 # These are injected by the app factory via ``router.state``
 _store: WorkflowStore | None = None
 _start_time: float = time.monotonic()
+_ws_manager: ConnectionManager = ConnectionManager()
 
 
 def configure(store: WorkflowStore) -> None:
     """Wire the storage dependency into the router (poor-man's DI)."""
     global _store
     _store = store
+
+
+def get_ws_manager() -> ConnectionManager:
+    """Expose the WebSocket manager so the app factory can wire events."""
+    return _ws_manager
 
 
 def _get_store() -> WorkflowStore:
@@ -169,3 +177,38 @@ async def get_workflow(workflow_id: str) -> WorkflowDetailResponse:
         metadata=wf.metadata,
         results=result_responses,
     )
+
+
+@router.delete(
+    "/workflows/{workflow_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    tags=["workflows"],
+)
+async def delete_workflow(workflow_id: str) -> None:
+    """Delete a workflow by ID."""
+    store = _get_store()
+    wf = await store.get(workflow_id)
+    if not wf:
+        raise HTTPException(status_code=404, detail="Workflow not found")
+    # Use delete if available, otherwise just note it's not supported
+    if hasattr(store, "delete"):
+        await store.delete(workflow_id)  # type: ignore[attr-defined]
+    else:
+        raise HTTPException(status_code=501, detail="Delete not supported by this storage backend")
+
+
+# ------------------------------------------------------------------
+# WebSocket — real-time events
+# ------------------------------------------------------------------
+
+
+@router.websocket("/ws/events")
+async def websocket_events(ws: WebSocket) -> None:
+    """Stream engine lifecycle events to connected clients."""
+    await _ws_manager.connect(ws)
+    try:
+        while True:
+            # Keep the connection alive; client sends pings
+            await ws.receive_text()
+    except WebSocketDisconnect:
+        _ws_manager.disconnect(ws)
