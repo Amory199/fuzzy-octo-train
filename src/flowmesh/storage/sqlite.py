@@ -115,9 +115,7 @@ class SQLiteWorkflowStore(WorkflowStore):
         )
         self._conn.commit()
 
-    async def save_results(
-        self, workflow_id: str, results: dict[str, TaskResult]
-    ) -> None:
+    async def save_results(self, workflow_id: str, results: dict[str, TaskResult]) -> None:
         for task_name, r in results.items():
             self._conn.execute(
                 "INSERT OR REPLACE INTO task_results "

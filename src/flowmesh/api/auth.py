@@ -15,7 +15,7 @@ import os
 import secrets
 from typing import TYPE_CHECKING
 
-from fastapi import HTTPException, Request, status
+from fastapi import Request, status
 from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
 
 if TYPE_CHECKING:
@@ -55,9 +55,11 @@ class APIKeyMiddleware(BaseHTTPMiddleware):
 
         provided = request.headers.get("X-API-Key") or request.query_params.get("api_key")
         if not provided or not secrets.compare_digest(provided, self._api_key):  # type: ignore[arg-type]
-            raise HTTPException(
+            from starlette.responses import JSONResponse
+
+            return JSONResponse(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid or missing API key",
+                content={"detail": "Invalid or missing API key"},
             )
 
         return await call_next(request)
