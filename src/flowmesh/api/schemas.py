@@ -60,3 +60,19 @@ class EngineStatsResponse(BaseModel):
     running: int
     succeeded: int
     failed: int
+
+
+class WorkflowExecutionResponse(BaseModel):
+    """Response after triggering workflow execution."""
+
+    workflow_id: str
+    status: str
+    message: str = "Workflow execution started"
+
+
+class WorkflowCancelResponse(BaseModel):
+    """Response after cancelling workflow."""
+
+    workflow_id: str
+    status: str
+    message: str
