@@ -18,6 +18,10 @@ from flowmesh.storage.base import WorkflowStore
 
 _DEFAULT_DB_PATH = "flowmesh.db"
 
+
+async def _noop() -> None:
+    """Placeholder callable for deserialized tasks."""
+
 _SCHEMA = """\
 CREATE TABLE IF NOT EXISTS workflows (
     id          TEXT PRIMARY KEY,
@@ -175,9 +179,6 @@ class SQLiteWorkflowStore(WorkflowStore):
     @staticmethod
     def _row_to_workflow(row: Any) -> Workflow:
         from flowmesh.core.models import Task
-
-        async def _noop() -> None:
-            pass
 
         wf_id, name, status, created_at, metadata_json, task_defs_json = row
         metadata = json.loads(metadata_json)

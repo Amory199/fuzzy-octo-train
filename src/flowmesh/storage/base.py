@@ -35,3 +35,6 @@ class WorkflowStore(ABC):
 
     @abstractmethod
     async def get_results(self, workflow_id: str) -> dict[str, TaskResult] | None: ...
+
+    @abstractmethod
+    async def delete(self, workflow_id: str) -> bool: ...

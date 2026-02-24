@@ -190,11 +190,7 @@ async def delete_workflow(workflow_id: str) -> None:
     wf = await store.get(workflow_id)
     if not wf:
         raise HTTPException(status_code=404, detail="Workflow not found")
-    # Use delete if available, otherwise just note it's not supported
-    if hasattr(store, "delete"):
-        await store.delete(workflow_id)  # type: ignore[attr-defined]
-    else:
-        raise HTTPException(status_code=501, detail="Delete not supported by this storage backend")
+    await store.delete(workflow_id)
 
 
 # ------------------------------------------------------------------
