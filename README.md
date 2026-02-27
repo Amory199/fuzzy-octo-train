@@ -50,9 +50,14 @@ FlowMesh is a **production-grade workflow engine** built from the ground up in P
 
 ```
 ┌──────────────────────────────────────────────────────────┐
-│                     REST API (FastAPI)                    │
-│              POST /workflows  GET /workflows             │
-│              GET /health      GET /stats                 │
+│                  Web Dashboard (HTML/JS)                  │
+│      Stats  │  Workflow CRUD  │  Live Events (WebSocket) │
+└─────────────────────────┬────────────────────────────────┘
+                          │
+┌─────────────────────────▼────────────────────────────────┐
+│                REST API (FastAPI) + Auth                  │
+│     POST/GET/DELETE /workflows   GET /health  /stats     │
+│           WS /ws/events    GET /dashboard                │
 └─────────────────────────┬────────────────────────────────┘
                           │
 ┌─────────────────────────▼────────────────────────────────┐
@@ -60,7 +65,7 @@ FlowMesh is a **production-grade workflow engine** built from the ground up in P
 │  ┌─────────┐  ┌───────────┐  ┌────────────────────────┐ │
 │  │   DAG   │  │ Scheduler │  │     Event Bus          │ │
 │  │ (topo-  │  │ (concurr- │  │ (pub/sub lifecycle     │ │
-│  │  sort)  │  │  ency)    │  │  events)               │ │
+│  │  sort)  │  │  ency)    │  │  events → WebSocket)   │ │
 │  └─────────┘  └───────────┘  └────────────────────────┘ │
 │                                                          │
 │  ┌──────────────── Resilience Layer ──────────────────┐  │
@@ -70,8 +75,8 @@ FlowMesh is a **production-grade workflow engine** built from the ground up in P
                           │
 ┌─────────────────────────▼────────────────────────────────┐
 │                   Storage Layer                           │
-│     InMemoryStore  │  (Redis)  │  (PostgreSQL)           │
-│        ✅ built-in │  🔌 plug  │  🔌 plug               │
+│     InMemoryStore  │  SQLiteStore   │  (PostgreSQL)      │
+│        ✅ built-in │  ✅ built-in   │  🔌 plug           │
 └──────────────────────────────────────────────────────────┘
 ```
 
@@ -125,6 +130,46 @@ docker compose up -d
 ```
 
 Then open **http://localhost:8000/docs** for interactive API documentation.
+
+### Web Dashboard
+
+Open **http://localhost:8000/dashboard/** for the built-in management dashboard:
+
+- **Stats overview** — live counts of total, pending, running, succeeded, and failed workflows
+- **Workflow list** — browse, inspect, and delete workflows
+- **Workflow detail** — view task results, durations, and errors
+- **Create workflow** — submit new workflow definitions via a form
+- **Live events** — real-time event stream via WebSocket
+
+### SQLite Persistence
+
+By default FlowMesh uses in-memory storage. To enable durable persistence
+that survives restarts, set the storage backend to SQLite:
+
+```bash
+export FLOWMESH_STORAGE=sqlite
+export FLOWMESH_DB_PATH=flowmesh.db   # optional, defaults to flowmesh.db
+uvicorn flowmesh.api.app:create_app --factory --reload
+```
+
+### API Key Authentication
+
+Set the ``FLOWMESH_API_KEY`` environment variable to enable API key
+authentication.  Every request (except `/health`, `/docs`, `/redoc`,
+and the dashboard) must include a matching key:
+
+```bash
+export FLOWMESH_API_KEY=my-secret-key
+uvicorn flowmesh.api.app:create_app --factory --reload
+
+# Authenticate via header
+curl -H "X-API-Key: my-secret-key" http://localhost:8000/workflows
+
+# Or via query parameter
+curl http://localhost:8000/workflows?api_key=my-secret-key
+```
+
+When the variable is not set, authentication is disabled.
 
 ---
 
@@ -475,8 +520,10 @@ curl -H "X-API-Key: secret-key-123" http://localhost:8000/workflows
 | **Retry with Exponential Backoff** | `patterns/retry.py` | Transient failure recovery |
 | **Token Bucket Rate Limiter** | `patterns/rate_limiter.py` | Throughput protection |
 | **Pub/Sub Event Bus** | `core/events.py` | Decoupled lifecycle notifications |
+| **Real-time WebSocket** | `api/websocket.py` | Push events to connected dashboard clients |
+| **Authentication Middleware** | `api/auth.py` | API key guard with timing-safe comparison |
 | **Hexagonal Architecture** | `storage/base.py` | Ports-and-adapters for pluggable persistence |
-| **Repository Pattern** | `storage/memory.py` | Abstracted data access |
+| **Repository Pattern** | `storage/memory.py`, `storage/sqlite.py` | Abstracted data access (in-memory + SQLite) |
 | **Factory Pattern** | `api/app.py` | Application assembly and DI |
 | **Strategy Pattern** | Engine retry/CB | Interchangeable resilience strategies |
 | **Command Pattern** | `core/models.Task` | Encapsulated async callables |
@@ -541,8 +588,8 @@ mypy src/flowmesh/
 │   └── auth/
 │       └── __init__.py      # API key & JWT authentication (NEW!)
 ├── tests/
-│   ├── unit/                 # 69 unit tests
-│   └── integration/          # 7 API integration tests
+│   ├── unit/                 # 80+ unit tests
+│   └── integration/          # 16+ API integration tests
 ├── examples/
 │   ├── basic_workflow.py
 │   ├── data_pipeline.py

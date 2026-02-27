@@ -1,0 +1,631 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>FlowMesh — Dashboard</title>
+  <style>
+    :root {
+      --bg: #0f172a;
+      --surface: #1e293b;
+      --surface2: #334155;
+      --border: #475569;
+      --text: #f1f5f9;
+      --text-muted: #94a3b8;
+      --primary: #3b82f6;
+      --primary-hover: #2563eb;
+      --success: #22c55e;
+      --danger: #ef4444;
+      --warning: #f59e0b;
+      --info: #06b6d4;
+      --radius: 8px;
+    }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+    }
+    a { color: var(--primary); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+
+    /* Layout */
+    .topbar {
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      padding: 0 24px;
+      height: 56px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      position: sticky;
+      top: 0;
+      z-index: 100;
+    }
+    .topbar h1 { font-size: 18px; font-weight: 700; }
+    .topbar h1 span { color: var(--primary); }
+    .topbar .status-dot {
+      width: 8px; height: 8px;
+      border-radius: 50%;
+      display: inline-block;
+      margin-left: 12px;
+    }
+    .topbar .status-dot.connected { background: var(--success); }
+    .topbar .status-dot.disconnected { background: var(--danger); }
+
+    .container { max-width: 1200px; margin: 0 auto; padding: 24px; }
+
+    /* Stats cards */
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 16px;
+      margin-bottom: 24px;
+    }
+    .stat-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 20px;
+    }
+    .stat-card .label { font-size: 12px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 1px; }
+    .stat-card .value { font-size: 32px; font-weight: 700; margin-top: 4px; }
+    .stat-card .value.success { color: var(--success); }
+    .stat-card .value.danger { color: var(--danger); }
+    .stat-card .value.warning { color: var(--warning); }
+    .stat-card .value.info { color: var(--info); }
+
+    /* Tabs */
+    .tabs {
+      display: flex;
+      gap: 0;
+      border-bottom: 1px solid var(--border);
+      margin-bottom: 20px;
+    }
+    .tab-btn {
+      background: none;
+      border: none;
+      color: var(--text-muted);
+      font-size: 14px;
+      padding: 12px 20px;
+      cursor: pointer;
+      border-bottom: 2px solid transparent;
+      transition: all 0.2s;
+    }
+    .tab-btn:hover { color: var(--text); }
+    .tab-btn.active { color: var(--primary); border-bottom-color: var(--primary); }
+    .tab-content { display: none; }
+    .tab-content.active { display: block; }
+
+    /* Table */
+    table { width: 100%; border-collapse: collapse; }
+    th, td {
+      text-align: left;
+      padding: 12px 16px;
+      border-bottom: 1px solid var(--border);
+    }
+    th { font-size: 11px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 1px; }
+    tr:hover td { background: var(--surface2); }
+
+    /* Status badges */
+    .badge {
+      display: inline-block;
+      padding: 2px 10px;
+      border-radius: 12px;
+      font-size: 12px;
+      font-weight: 600;
+    }
+    .badge.pending { background: #1e3a5f; color: var(--info); }
+    .badge.running { background: #422006; color: var(--warning); }
+    .badge.success { background: #052e16; color: var(--success); }
+    .badge.failed { background: #450a0a; color: var(--danger); }
+    .badge.skipped { background: #1e293b; color: var(--text-muted); }
+    .badge.cancelled { background: #1e293b; color: var(--text-muted); }
+
+    /* Buttons */
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 8px 16px;
+      border-radius: var(--radius);
+      font-size: 13px;
+      font-weight: 600;
+      border: none;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+    .btn-primary { background: var(--primary); color: #fff; }
+    .btn-primary:hover { background: var(--primary-hover); }
+    .btn-danger { background: var(--danger); color: #fff; }
+    .btn-danger:hover { background: #dc2626; }
+    .btn-sm { padding: 4px 10px; font-size: 12px; }
+
+    /* Forms */
+    .form-group { margin-bottom: 16px; }
+    .form-group label { display: block; font-size: 13px; color: var(--text-muted); margin-bottom: 6px; }
+    .form-group input, .form-group textarea {
+      width: 100%;
+      padding: 10px 12px;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      color: var(--text);
+      font-size: 14px;
+      font-family: inherit;
+    }
+    .form-group input:focus, .form-group textarea:focus {
+      outline: none;
+      border-color: var(--primary);
+    }
+    .form-group textarea { resize: vertical; min-height: 120px; font-family: 'SF Mono', Monaco, monospace; font-size: 13px; }
+
+    /* Modal */
+    .modal-overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.6);
+      z-index: 200;
+      align-items: center;
+      justify-content: center;
+    }
+    .modal-overlay.active { display: flex; }
+    .modal {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 24px;
+      width: 90%;
+      max-width: 600px;
+      max-height: 80vh;
+      overflow-y: auto;
+    }
+    .modal h2 { margin-bottom: 16px; font-size: 18px; }
+
+    /* Event log */
+    .event-log {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      max-height: 400px;
+      overflow-y: auto;
+      font-family: 'SF Mono', Monaco, 'Courier New', monospace;
+      font-size: 12px;
+    }
+    .event-log .event-item {
+      padding: 8px 12px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      gap: 12px;
+      align-items: flex-start;
+    }
+    .event-log .event-item:last-child { border-bottom: none; }
+    .event-log .event-time { color: var(--text-muted); white-space: nowrap; }
+    .event-log .event-type { font-weight: 600; min-width: 140px; }
+    .event-log .event-payload { color: var(--text-muted); word-break: break-all; }
+
+    /* Detail panel */
+    .detail-panel { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 24px; }
+    .detail-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
+    .detail-meta { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin-bottom: 20px; }
+    .detail-meta .meta-item .meta-label { font-size: 11px; color: var(--text-muted); text-transform: uppercase; }
+    .detail-meta .meta-item .meta-value { font-size: 14px; margin-top: 2px; }
+
+    .back-link { font-size: 13px; cursor: pointer; color: var(--primary); margin-bottom: 16px; display: inline-block; }
+    .back-link:hover { text-decoration: underline; }
+
+    /* Empty state */
+    .empty-state {
+      text-align: center;
+      padding: 60px 20px;
+      color: var(--text-muted);
+    }
+    .empty-state .icon { font-size: 48px; margin-bottom: 12px; }
+
+    /* Toast notifications */
+    .toast-container {
+      position: fixed;
+      top: 68px;
+      right: 20px;
+      z-index: 300;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .toast {
+      padding: 12px 16px;
+      border-radius: var(--radius);
+      font-size: 13px;
+      animation: slideIn 0.3s ease;
+      max-width: 360px;
+    }
+    .toast.success { background: #052e16; border: 1px solid var(--success); color: var(--success); }
+    .toast.error { background: #450a0a; border: 1px solid var(--danger); color: var(--danger); }
+    .toast.info { background: #1e3a5f; border: 1px solid var(--info); color: var(--info); }
+    @keyframes slideIn { from { transform: translateX(100%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+  </style>
+</head>
+<body>
+
+<div class="topbar">
+  <h1 aria-label="FlowMesh Dashboard">🔀 <span>Flow</span>Mesh</h1>
+  <div style="display: flex; align-items: center; gap: 12px; font-size: 13px;">
+    <span id="ws-status" style="color: var(--text-muted);">Connecting…</span>
+    <span id="ws-dot" class="status-dot disconnected"></span>
+  </div>
+</div>
+
+<div class="container">
+  <!-- Stats -->
+  <div class="stats-grid" id="stats-grid">
+    <div class="stat-card"><div class="label">Total Workflows</div><div class="value" id="stat-total">—</div></div>
+    <div class="stat-card"><div class="label">Pending</div><div class="value info" id="stat-pending">—</div></div>
+    <div class="stat-card"><div class="label">Running</div><div class="value warning" id="stat-running">—</div></div>
+    <div class="stat-card"><div class="label">Succeeded</div><div class="value success" id="stat-succeeded">—</div></div>
+    <div class="stat-card"><div class="label">Failed</div><div class="value danger" id="stat-failed">—</div></div>
+  </div>
+
+  <!-- Tabs -->
+  <div class="tabs">
+    <button class="tab-btn active" data-tab="workflows">Workflows</button>
+    <button class="tab-btn" data-tab="events">Live Events</button>
+    <button class="tab-btn" data-tab="create">Create Workflow</button>
+  </div>
+
+  <!-- Workflows Tab -->
+  <div id="tab-workflows" class="tab-content active">
+    <div id="workflow-list-view">
+      <table>
+        <thead>
+          <tr>
+            <th>Name</th>
+            <th>Status</th>
+            <th>Tasks</th>
+            <th>Created</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody id="workflow-tbody"></tbody>
+      </table>
+      <div id="workflow-empty" class="empty-state" style="display:none;">
+        <div class="icon">📭</div>
+        <p>No workflows yet. Create your first one!</p>
+      </div>
+    </div>
+
+    <!-- Workflow Detail -->
+    <div id="workflow-detail-view" style="display:none;">
+      <span class="back-link" onclick="showWorkflowList()">← Back to list</span>
+      <div class="detail-panel">
+        <div class="detail-header">
+          <h2 id="detail-name"></h2>
+          <span id="detail-status" class="badge"></span>
+        </div>
+        <div class="detail-meta">
+          <div class="meta-item"><div class="meta-label">ID</div><div class="meta-value" id="detail-id"></div></div>
+          <div class="meta-item"><div class="meta-label">Created</div><div class="meta-value" id="detail-created"></div></div>
+          <div class="meta-item"><div class="meta-label">Task Count</div><div class="meta-value" id="detail-task-count"></div></div>
+        </div>
+        <h3 style="margin-bottom: 12px; font-size: 14px; color: var(--text-muted);">TASK RESULTS</h3>
+        <table>
+          <thead><tr><th>Task</th><th>Status</th><th>Duration</th><th>Error</th></tr></thead>
+          <tbody id="detail-results-tbody"></tbody>
+        </table>
+        <div id="detail-no-results" class="empty-state" style="display:none; padding: 30px;">
+          <p>No execution results yet.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Events Tab -->
+  <div id="tab-events" class="tab-content">
+    <div class="event-log" id="event-log">
+      <div class="empty-state" id="event-empty" style="padding: 40px;">
+        <div class="icon">📡</div>
+        <p>Waiting for events… Events appear here in real-time when workflows execute.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- Create Tab -->
+  <div id="tab-create" class="tab-content">
+    <div style="max-width: 600px;">
+      <h2 style="margin-bottom: 16px;">Create Workflow</h2>
+      <form id="create-form" onsubmit="createWorkflow(event)">
+        <div class="form-group">
+          <label for="wf-name">Workflow Name</label>
+          <input id="wf-name" type="text" placeholder="e.g. ETL Pipeline" required>
+        </div>
+        <div class="form-group">
+          <label for="wf-tasks">Task Definitions (JSON array)</label>
+          <textarea id="wf-tasks" placeholder='[
+  {"name": "extract"},
+  {"name": "transform", "depends_on": ["extract"]},
+  {"name": "load", "depends_on": ["transform"]}
+]'></textarea>
+        </div>
+        <div class="form-group">
+          <label for="wf-metadata">Metadata (JSON object, optional)</label>
+          <input id="wf-metadata" type="text" placeholder='{"team": "data-eng"}'>
+        </div>
+        <button type="submit" class="btn btn-primary">Create Workflow</button>
+      </form>
+    </div>
+  </div>
+</div>
+
+<!-- Toast container -->
+<div class="toast-container" id="toast-container"></div>
+
+<script>
+  // ---- Configuration ----
+  const API_BASE = window.location.origin;
+  const API_KEY = new URLSearchParams(window.location.search).get('api_key') || '';
+  const headers = { 'Content-Type': 'application/json' };
+  if (API_KEY) headers['X-API-Key'] = API_KEY;
+
+  // ---- Tabs ----
+  document.querySelectorAll('.tab-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+      document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+      btn.classList.add('active');
+      document.getElementById('tab-' + btn.dataset.tab).classList.add('active');
+    });
+  });
+
+  // ---- Toast notifications ----
+  function showToast(message, type = 'info') {
+    const container = document.getElementById('toast-container');
+    const toast = document.createElement('div');
+    toast.className = 'toast ' + type;
+    toast.textContent = message;
+    container.appendChild(toast);
+    setTimeout(() => toast.remove(), 4000);
+  }
+
+  // ---- Stats ----
+  async function loadStats() {
+    try {
+      const resp = await fetch(API_BASE + '/stats', { headers });
+      if (!resp.ok) return;
+      const data = await resp.json();
+      document.getElementById('stat-total').textContent = data.total_workflows;
+      document.getElementById('stat-pending').textContent = data.pending;
+      document.getElementById('stat-running').textContent = data.running;
+      document.getElementById('stat-succeeded').textContent = data.succeeded;
+      document.getElementById('stat-failed').textContent = data.failed;
+    } catch (e) { /* silently retry on next poll */ }
+  }
+
+  // ---- Workflow list ----
+  async function loadWorkflows() {
+    try {
+      const resp = await fetch(API_BASE + '/workflows?limit=100', { headers });
+      if (!resp.ok) return;
+      const workflows = await resp.json();
+      const tbody = document.getElementById('workflow-tbody');
+      const empty = document.getElementById('workflow-empty');
+      if (workflows.length === 0) {
+        tbody.innerHTML = '';
+        empty.style.display = 'block';
+        return;
+      }
+      empty.style.display = 'none';
+      tbody.innerHTML = workflows.map(w => `
+        <tr>
+          <td><a href="#" onclick="viewWorkflow('${w.id}'); return false;">${esc(w.name)}</a></td>
+          <td><span class="badge ${w.status}">${w.status}</span></td>
+          <td>${w.task_count}</td>
+          <td>${new Date(w.created_at).toLocaleString()}</td>
+          <td>
+            <button class="btn btn-danger btn-sm" onclick="deleteWorkflow('${w.id}')">Delete</button>
+          </td>
+        </tr>
+      `).join('');
+    } catch (e) { /* retry on next poll */ }
+  }
+
+  // ---- Workflow detail ----
+  async function viewWorkflow(id) {
+    try {
+      const resp = await fetch(API_BASE + '/workflows/' + id, { headers });
+      if (!resp.ok) { showToast('Workflow not found', 'error'); return; }
+      const wf = await resp.json();
+
+      document.getElementById('workflow-list-view').style.display = 'none';
+      document.getElementById('workflow-detail-view').style.display = 'block';
+
+      document.getElementById('detail-name').textContent = wf.name;
+      document.getElementById('detail-id').textContent = wf.id;
+      document.getElementById('detail-created').textContent = new Date(wf.created_at).toLocaleString();
+      document.getElementById('detail-task-count').textContent = wf.task_count;
+
+      const statusEl = document.getElementById('detail-status');
+      statusEl.textContent = wf.status;
+      statusEl.className = 'badge ' + wf.status;
+
+      const results = wf.results || {};
+      const keys = Object.keys(results);
+      const rtbody = document.getElementById('detail-results-tbody');
+      const noRes = document.getElementById('detail-no-results');
+
+      if (keys.length === 0) {
+        rtbody.innerHTML = '';
+        noRes.style.display = 'block';
+      } else {
+        noRes.style.display = 'none';
+        rtbody.innerHTML = keys.map(name => {
+          const r = results[name];
+          const dur = r.duration_ms != null ? r.duration_ms.toFixed(0) + ' ms' : '—';
+          return `
+            <tr>
+              <td>${esc(name)}</td>
+              <td><span class="badge ${r.status}">${r.status}</span></td>
+              <td>${dur}</td>
+              <td style="color: var(--danger);">${r.error || '—'}</td>
+            </tr>
+          `;
+        }).join('');
+      }
+    } catch (e) {
+      showToast('Failed to load workflow details', 'error');
+    }
+  }
+
+  function showWorkflowList() {
+    document.getElementById('workflow-list-view').style.display = 'block';
+    document.getElementById('workflow-detail-view').style.display = 'none';
+    loadWorkflows();
+  }
+
+  // ---- Delete workflow ----
+  async function deleteWorkflow(id) {
+    if (!confirm('Delete this workflow?')) return;
+    try {
+      const resp = await fetch(API_BASE + '/workflows/' + id, { method: 'DELETE', headers });
+      if (resp.ok || resp.status === 204) {
+        showToast('Workflow deleted', 'success');
+        loadWorkflows();
+        loadStats();
+      } else {
+        showToast('Delete failed: ' + resp.statusText, 'error');
+      }
+    } catch (e) {
+      showToast('Delete failed', 'error');
+    }
+  }
+
+  // ---- Create workflow ----
+  async function createWorkflow(event) {
+    event.preventDefault();
+    const name = document.getElementById('wf-name').value.trim();
+    const tasksRaw = document.getElementById('wf-tasks').value.trim();
+    const metaRaw = document.getElementById('wf-metadata').value.trim();
+
+    let tasks, metadata;
+    try {
+      tasks = JSON.parse(tasksRaw || '[]');
+    } catch (e) {
+      showToast('Invalid JSON in tasks field', 'error');
+      return;
+    }
+    try {
+      metadata = metaRaw ? JSON.parse(metaRaw) : {};
+    } catch (e) {
+      showToast('Invalid JSON in metadata field', 'error');
+      return;
+    }
+
+    if (!name || tasks.length === 0) {
+      showToast('Name and at least one task are required', 'error');
+      return;
+    }
+
+    try {
+      const resp = await fetch(API_BASE + '/workflows', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ name, tasks, metadata }),
+      });
+      if (resp.ok || resp.status === 201) {
+        showToast('Workflow created!', 'success');
+        document.getElementById('create-form').reset();
+        loadWorkflows();
+        loadStats();
+        // Switch to workflows tab
+        document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+        document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+        document.querySelector('[data-tab="workflows"]').classList.add('active');
+        document.getElementById('tab-workflows').classList.add('active');
+      } else {
+        const err = await resp.json().catch(() => ({}));
+        showToast('Create failed: ' + (err.detail || resp.statusText), 'error');
+      }
+    } catch (e) {
+      showToast('Create failed: network error', 'error');
+    }
+  }
+
+  // ---- WebSocket ----
+  let ws = null;
+  let reconnectTimer = null;
+
+  function connectWebSocket() {
+    const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const wsUrl = proto + '//' + window.location.host + '/ws/events';
+    ws = new WebSocket(wsUrl);
+
+    ws.onopen = () => {
+      document.getElementById('ws-status').textContent = 'Connected';
+      document.getElementById('ws-dot').className = 'status-dot connected';
+    };
+
+    ws.onclose = () => {
+      document.getElementById('ws-status').textContent = 'Disconnected';
+      document.getElementById('ws-dot').className = 'status-dot disconnected';
+      // Auto-reconnect
+      reconnectTimer = setTimeout(connectWebSocket, 3000);
+    };
+
+    ws.onerror = () => {
+      ws.close();
+    };
+
+    ws.onmessage = (evt) => {
+      try {
+        const data = JSON.parse(evt.data);
+        appendEvent(data);
+        // Refresh stats on workflow events
+        if (data.event_type && data.event_type.startsWith('workflow.')) {
+          loadStats();
+          loadWorkflows();
+        }
+      } catch (e) { /* ignore parse errors */ }
+    };
+  }
+
+  function appendEvent(data) {
+    const log = document.getElementById('event-log');
+    const empty = document.getElementById('event-empty');
+    if (empty) empty.remove();
+
+    const item = document.createElement('div');
+    item.className = 'event-item';
+
+    const time = data.timestamp ? new Date(data.timestamp).toLocaleTimeString() : new Date().toLocaleTimeString();
+    const eventType = data.event_type || 'unknown';
+    const payload = data.payload ? JSON.stringify(data.payload) : '';
+
+    item.innerHTML = `
+      <span class="event-time">${time}</span>
+      <span class="event-type">${esc(eventType)}</span>
+      <span class="event-payload">${esc(payload)}</span>
+    `;
+    log.prepend(item);
+
+    // Keep only last 200 events
+    while (log.children.length > 200) {
+      log.removeChild(log.lastChild);
+    }
+  }
+
+  // ---- Utilities ----
+  function esc(str) {
+    const div = document.createElement('div');
+    div.textContent = str;
+    return div.innerHTML;
+  }
+
+  // ---- Init ----
+  loadStats();
+  loadWorkflows();
+  connectWebSocket();
+  // Poll stats every 10s
+  setInterval(() => { loadStats(); loadWorkflows(); }, 10000);
+</script>
+</body>
+</html>

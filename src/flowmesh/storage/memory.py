@@ -43,3 +43,10 @@ class InMemoryWorkflowStore(WorkflowStore):
     async def get_results(self, workflow_id: str) -> dict[str, TaskResult] | None:
         res = self._results.get(workflow_id)
         return copy.deepcopy(res) if res else None
+
+    async def delete(self, workflow_id: str) -> bool:
+        """Remove a workflow and its results. Returns True if found."""
+        found = workflow_id in self._workflows
+        self._workflows.pop(workflow_id, None)
+        self._results.pop(workflow_id, None)
+        return found

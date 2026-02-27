@@ -8,6 +8,11 @@ services:
     environment:
       - FLOWMESH_LOG_LEVEL=INFO
       - FLOWMESH_WORKERS=2
+      - FLOWMESH_STORAGE=sqlite
+      - FLOWMESH_DB_PATH=/data/flowmesh.db
+      # - FLOWMESH_API_KEY=change-me-in-production
+    volumes:
+      - flowmesh-data:/data
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
@@ -15,3 +20,6 @@ services:
       timeout: 5s
       retries: 3
       start_period: 10s
+
+volumes:
+  flowmesh-data:

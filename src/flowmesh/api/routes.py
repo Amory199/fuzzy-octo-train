@@ -7,7 +7,8 @@ import logging
 import time
 from typing import TYPE_CHECKING
 
-from fastapi import APIRouter, BackgroundTasks, HTTPException, status
+from fastapi import APIRouter, HTTPException, status
+from starlette.websockets import WebSocket, WebSocketDisconnect
 
 from flowmesh import __version__
 from flowmesh.api.schemas import (
@@ -42,6 +43,11 @@ def configure(store: WorkflowStore, engine: ExecutionEngine | None = None) -> No
     global _store, _engine
     _store = store
     _engine = engine or ExecutionEngine()
+
+
+def get_ws_manager() -> ConnectionManager:
+    """Expose the WebSocket manager so the app factory can wire events."""
+    return _ws_manager
 
 
 def _get_store() -> WorkflowStore:
