@@ -1,0 +1,71 @@
+name: Data Processing Pipeline
+metadata:
+  owner: data-engineering-team
+  environment: production
+  version: "1.0"
+  description: "ETL pipeline for customer data processing"
+
+tasks:
+  - name: extract
+    timeout: 30.0
+    retry_count: 3
+    priority: 10
+    metadata:
+      description: "Extract customer data from production database"
+      criticality: "high"
+
+  - name: validate
+    depends_on:
+      - extract
+    timeout: 15.0
+    retry_count: 2
+    priority: 8
+    input_map:
+      data: extract
+    metadata:
+      description: "Validate data quality and schema"
+
+  - name: transform
+    depends_on:
+      - validate
+    timeout: 45.0
+    priority: 5
+    input_map:
+      validated_data: validate
+    metadata:
+      description: "Transform and normalize data"
+
+  - name: enrich
+    depends_on:
+      - validate
+    timeout: 30.0
+    priority: 5
+    input_map:
+      data: validate
+    metadata:
+      description: "Enrich with external data sources"
+
+  - name: load
+    depends_on:
+      - transform
+      - enrich
+    timeout: 60.0
+    retry_count: 3
+    priority: 3
+    input_map:
+      transformed: transform
+      enriched: enrich
+    metadata:
+      description: "Load data into warehouse"
+      destination: "s3://data-warehouse/customers"
+
+  - name: notify
+    depends_on:
+      - load
+    timeout: 10.0
+    priority: 1
+    input_map:
+      result: load
+    metadata:
+      description: "Send completion notification"
+      channel: "slack"

@@ -37,9 +37,7 @@ class InMemoryWorkflowStore(WorkflowStore):
         if wf:
             wf.status = status
 
-    async def save_results(
-        self, workflow_id: str, results: dict[str, TaskResult]
-    ) -> None:
+    async def save_results(self, workflow_id: str, results: dict[str, TaskResult]) -> None:
         self._results[workflow_id] = copy.deepcopy(results)
 
     async def get_results(self, workflow_id: str) -> dict[str, TaskResult] | None:

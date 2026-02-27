@@ -53,7 +53,7 @@ async def retry_with_backoff(
             if attempt == policy.max_retries:
                 break
             delay = min(
-                policy.base_delay_seconds * (policy.exponential_base ** attempt),
+                policy.base_delay_seconds * (policy.exponential_base**attempt),
                 policy.max_delay_seconds,
             )
             if policy.jitter:
