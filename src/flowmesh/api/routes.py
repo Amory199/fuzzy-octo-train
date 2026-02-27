@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
+import logging
 import time
 from typing import TYPE_CHECKING
 
@@ -13,28 +15,34 @@ from flowmesh.api.schemas import (
     EngineStatsResponse,
     HealthResponse,
     TaskResultResponse,
+    WorkflowCancelResponse,
     WorkflowCreate,
     WorkflowDetailResponse,
+    WorkflowExecutionResponse,
     WorkflowResponse,
 )
-from flowmesh.api.websocket import ConnectionManager
+from flowmesh.core.engine import ExecutionEngine
 from flowmesh.core.models import WorkflowStatus
 
 if TYPE_CHECKING:
     from flowmesh.storage.base import WorkflowStore
 
+logger = logging.getLogger(__name__)
+
 router = APIRouter()
 
 # These are injected by the app factory via ``router.state``
 _store: WorkflowStore | None = None
+_engine: ExecutionEngine | None = None
 _start_time: float = time.monotonic()
-_ws_manager: ConnectionManager = ConnectionManager()
+_running_workflows: dict[str, asyncio.Task[None]] = {}
 
 
-def configure(store: WorkflowStore) -> None:
-    """Wire the storage dependency into the router (poor-man's DI)."""
-    global _store
+def configure(store: WorkflowStore, engine: ExecutionEngine | None = None) -> None:
+    """Wire the storage dependency and execution engine into the router (poor-man's DI)."""
+    global _store, _engine
     _store = store
+    _engine = engine or ExecutionEngine()
 
 
 def get_ws_manager() -> ConnectionManager:
@@ -46,6 +54,12 @@ def _get_store() -> WorkflowStore:
     if _store is None:
         raise RuntimeError("Store not configured")
     return _store
+
+
+def _get_engine() -> ExecutionEngine:
+    if _engine is None:
+        raise RuntimeError("Engine not configured")
+    return _engine
 
 
 # ------------------------------------------------------------------
@@ -179,32 +193,123 @@ async def get_workflow(workflow_id: str) -> WorkflowDetailResponse:
     )
 
 
-@router.delete(
-    "/workflows/{workflow_id}",
-    status_code=status.HTTP_204_NO_CONTENT,
+# ------------------------------------------------------------------
+# Workflow execution & control
+# ------------------------------------------------------------------
+
+
+async def _execute_workflow_background(workflow_id: str) -> None:
+    """Execute a workflow in the background and persist results."""
+    try:
+        store = _get_store()
+        engine = _get_engine()
+
+        # Get workflow
+        wf = await store.get(workflow_id)
+        if not wf:
+            logger.error(f"Workflow {workflow_id} not found for execution")
+            return
+
+        # Update status to running
+        await store.update_status(workflow_id, WorkflowStatus.RUNNING)
+
+        # Execute workflow
+        logger.info(f"Starting execution of workflow {workflow_id}")
+        results = await engine.execute(wf)
+
+        # Save results
+        await store.save_results(workflow_id, results)
+
+        # Update final status
+        final_status = (
+            WorkflowStatus.SUCCESS
+            if all(r.status == "success" for r in results.values())
+            else WorkflowStatus.FAILED
+        )
+        await store.update_status(workflow_id, final_status)
+
+        logger.info(f"Workflow {workflow_id} completed with status {final_status.value}")
+
+    except Exception as exc:
+        logger.exception(f"Error executing workflow {workflow_id}: {exc}")
+        try:
+            store = _get_store()
+            await store.update_status(workflow_id, WorkflowStatus.FAILED)
+        except Exception as save_exc:
+            logger.exception(f"Failed to update workflow status after error: {save_exc}")
+    finally:
+        # Clean up tracking
+        _running_workflows.pop(workflow_id, None)
+
+
+@router.post(
+    "/workflows/{workflow_id}/execute",
+    response_model=WorkflowExecutionResponse,
     tags=["workflows"],
 )
-async def delete_workflow(workflow_id: str) -> None:
-    """Delete a workflow by ID."""
+async def execute_workflow(
+    workflow_id: str, background_tasks: BackgroundTasks
+) -> WorkflowExecutionResponse:
+    """Trigger async execution of a workflow.
+
+    The workflow executes in the background. Poll GET /workflows/{workflow_id}
+    to check status and retrieve results.
+    """
     store = _get_store()
     wf = await store.get(workflow_id)
     if not wf:
         raise HTTPException(status_code=404, detail="Workflow not found")
-    await store.delete(workflow_id)
+
+    # Check if already running
+    if workflow_id in _running_workflows:
+        return WorkflowExecutionResponse(
+            workflow_id=workflow_id,
+            status=WorkflowStatus.RUNNING.value,
+            message="Workflow is already executing",
+        )
+
+    # Create background task
+    task = asyncio.create_task(_execute_workflow_background(workflow_id))
+    _running_workflows[workflow_id] = task
+
+    return WorkflowExecutionResponse(
+        workflow_id=workflow_id,
+        status=WorkflowStatus.RUNNING.value,
+        message="Workflow execution started",
+    )
 
 
-# ------------------------------------------------------------------
-# WebSocket — real-time events
-# ------------------------------------------------------------------
+@router.delete(
+    "/workflows/{workflow_id}",
+    response_model=WorkflowCancelResponse,
+    tags=["workflows"],
+)
+async def cancel_workflow(workflow_id: str) -> WorkflowCancelResponse:
+    """Cancel a running workflow.
 
+    Note: This cancels the workflow task but individual task execution
+    may complete if already started.
+    """
+    if workflow_id not in _running_workflows:
+        raise HTTPException(status_code=404, detail="Workflow not running or not found")
 
-@router.websocket("/ws/events")
-async def websocket_events(ws: WebSocket) -> None:
-    """Stream engine lifecycle events to connected clients."""
-    await _ws_manager.connect(ws)
+    # Cancel the task
+    task = _running_workflows[workflow_id]
+    task.cancel()
+
     try:
-        while True:
-            # Keep the connection alive; client sends pings
-            await ws.receive_text()
-    except WebSocketDisconnect:
-        _ws_manager.disconnect(ws)
+        await task
+    except asyncio.CancelledError:
+        pass  # Expected when cancelling
+
+    # Update status
+    store = _get_store()
+    await store.update_status(workflow_id, WorkflowStatus.CANCELLED)
+
+    _running_workflows.pop(workflow_id, None)
+
+    return WorkflowCancelResponse(
+        workflow_id=workflow_id,
+        status=WorkflowStatus.CANCELLED.value,
+        message="Workflow cancelled successfully",
+    )
